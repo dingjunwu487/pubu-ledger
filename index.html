@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="酒馆账本" />
+  <meta name="theme-color" content="#111827" />
+  <title>优布劳酒馆账本</title>
+  <link rel="manifest" href="./manifest.json" />
+  <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a; color: #e5e7eb; padding-bottom: 80px;
+    }
+    header { padding: 18px 16px 10px; }
+    h1 { margin: 0; font-size: 20px; }
+    .sub { color: #94a3b8; font-size: 12px; margin-top: 4px; }
+    nav {
+      position: sticky; top: 0; z-index: 10; display: flex; gap: 6px;
+      padding: 8px 10px; background: rgba(15,23,42,.96); backdrop-filter: blur(10px);
+      border-bottom: 1px solid #1e293b; overflow-x: auto;
+    }
+    .tab-btn {
+      flex: 0 0 auto; border: 1px solid #334155; background: #111827; color: #cbd5e1;
+      padding: 8px 12px; border-radius: 999px; font-size: 13px;
+    }
+    .tab-btn.active { background: #f59e0b; border-color: #f59e0b; color: #111827; font-weight: 700; }
+    main { padding: 12px; max-width: 820px; margin: 0 auto; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+    .card {
+      background: #111827; border: 1px solid #1e293b; border-radius: 16px;
+      padding: 14px; margin-bottom: 12px;
+    }
+    h2 { margin: 0 0 10px; font-size: 15px; color: #fbbf24; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin: 8px 0 4px; }
+    input, select, textarea, button {
+      font: inherit; border-radius: 10px; border: 1px solid #334155;
+      background: #0b1220; color: #e5e7eb; padding: 10px; width: 100%;
+    }
+    input[type="date"], input[type="month"] { min-height: 42px; }
+    button { background: #1d4ed8; border-color: #1d4ed8; color: white; font-weight: 600; }
+    button.secondary { background: #334155; border-color: #475569; }
+    button.danger { background: #991b1b; border-color: #dc2626; }
+    button.small { width: auto; padding: 6px 10px; font-size: 12px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .hint { color: #94a3b8; font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    th, td { border-bottom: 1px solid #1e293b; padding: 7px 4px; text-align: right; vertical-align: top; }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: #94a3b8; font-weight: 500; }
+    .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .stat { background: #0b1220; border: 1px solid #1e293b; border-radius: 12px; padding: 10px; }
+    .stat .k { color: #94a3b8; font-size: 11px; }
+    .stat .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
+    .list-item { border-bottom: 1px solid #1e293b; padding: 10px 0; font-size: 13px; }
+    .list-item:last-child { border-bottom: 0; }
+    .muted { color: #94a3b8; font-size: 12px; }
+    .ok { color: #34d399; }
+    .bad { color: #f87171; }
+    textarea { min-height: 110px; resize: vertical; }
+    .table-wrap { overflow-x: auto; }
+    @media (max-width: 380px) {
+      .row, .row3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>优布劳酒馆账本</h1>
+    <div class="sub">iOS 自用 · 本地存储 · 先测试核心记账</div>
+  </header>
+
+  <nav>
+    <button class="tab-btn active" data-tab="sales">销售</button>
+    <button class="tab-btn" data-tab="products">酒款</button>
+    <button class="tab-btn" data-tab="expenses">支出</button>
+    <button class="tab-btn" data-tab="reports">报表</button>
+    <button class="tab-btn" data-tab="settings">备份</button>
+  </nav>
+
+  <main>
+    <section id="tab-sales" class="tab active">
+      <div class="card">
+        <h2>小票 OCR 辅助</h2>
+        <input type="file" id="ocrFile" accept="image/*" capture="environment" />
+        <div class="row">
+          <button type="button" id="ocrBtn">识别小票文字</button>
+          <button type="button" class="secondary" id="clearOcrBtn">清空文字</button>
+        </div>
+        <div class="hint" id="ocrStatus"></div>
+        <textarea id="ocrText" placeholder="识别出的文字会显示在这里。当前先作为辅助，你确认后手动录入下方明细。"></textarea>
+        <p class="hint">注意：纯网页 OCR 对中文收银小票不保证准确。下一步你发我 2-3 张真实小票样本，我再做自动解析规则。</p>
+      </div>
+
+      <div class="card">
+        <h2>当前小票</h2>
+        <label>日期</label>
+        <input type="date" id="saleDate" />
+
+        <label>酒款</label>
+        <select id="saleProduct"></select>
+
+        <label>规格</label>
+        <select id="saleSpec"></select>
+
+        <div class="row3">
+          <div>
+            <label>数量</label>
+            <input type="number" id="saleQty" value="1" min="1" step="1" />
+          </div>
+          <div>
+            <label>实收金额</label>
+            <input type="number" id="saleAmount" step="0.01" placeholder="0.00" />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button type="button" id="addItem">加入小票</button>
+          </div>
+        </div>
+        <div class="hint" id="itemCostHint"></div>
+
+        <div class="table-wrap">
+          <table id="currentItemsTable"></table>
+        </div>
+        <div class="row">
+          <button type="button" id="saveSale">保存小票</button>
+          <button type="button" class="secondary" id="clearCurrentItems">清空当前小票</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>最近销售</h2>
+        <div id="recentSales"></div>
+      </div>
+    </section>
+
+    <section id="tab-products" class="tab">
+      <div class="card">
+        <h2>新增酒款</h2>
+        <form id="productForm">
+          <label>酒款名称</label>
+          <input id="productName" placeholder="例如：骑士小麦" required />
+          <div class="row">
+            <div>
+              <label>进货价（元）</label>
+              <input id="productPrice" type="number" step="0.01" placeholder="330" required />
+            </div>
+            <div>
+              <label>总容量（L）</label>
+              <input id="productVolume" type="number" step="0.01" placeholder="29" required />
+            </div>
+          </div>
+          <div style="margin-top:10px"><button type="submit">保存酒款</button></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>新增售卖规格</h2>
+        <form id="specForm">
+          <label>选择酒款</label>
+          <select id="specProduct" required></select>
+          <div class="row">
+            <div>
+              <label>规格名称</label>
+              <input id="specName" placeholder="例如：330ml杯" required />
+            </div>
+            <div>
+              <label>规格容量（L）</label>
+              <input id="specVolume" type="number" step="0.001" placeholder="0.33" required />
+            </div>
+          </div>
+          <label>售价（元）</label>
+          <input id="specPrice" type="number" step="0.01" placeholder="28" required />
+          <div style="margin-top:10px"><button type="submit">保存规格</button></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>酒款与成本</h2>
+        <div id="productList"></div>
+      </div>
+    </section>
+
+    <section id="tab-expenses" class="tab">
+      <div class="card">
+        <h2>新增支出</h2>
+        <form id="expenseForm">
+          <label>日期</label>
+          <input type="date" id="expenseDate" required />
+          <label>类别</label>
+          <select id="expenseCategory">
+            <option>人工</option>
+            <option>房租</option>
+            <option>水电</option>
+            <option>耗材</option>
+            <option>其他</option>
+          </select>
+          <label>金额</label>
+          <input type="number" id="expenseAmount" step="0.01" required />
+          <label>备注</label>
+          <input id="expenseNote" placeholder="可选" />
+          <div style="margin-top:10px"><button type="submit">保存支出</button></div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>最近支出</h2>
+        <div id="expenseList"></div>
+      </div>
+    </section>
+
+    <section id="tab-reports" class="tab">
+      <div class="card">
+        <h2>报表月份</h2>
+        <input type="month" id="reportMonth" />
+        <div class="summary" style="margin-top:12px">
+          <div class="stat"><div class="k">实收收入</div><div class="v" id="statRevenue">¥0.00</div></div>
+          <div class="stat"><div class="k">酒水成本</div><div class="v" id="statCogs">¥0.00</div></div>
+          <div class="stat"><div class="k">其他支出</div><div class="v" id="statExpense">¥0.00</div></div>
+          <div class="stat"><div class="k">利润</div><div class="v" id="statProfit">¥0.00</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>日利润</h2>
+        <div class="table-wrap"><table id="dailyReport"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>按酒款毛利</h2>
+        <div class="table-wrap"><table id="productReport"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>成本分类占比</h2>
+        <div class="table-wrap"><table id="costReport"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>销售汇总</h2>
+        <div class="table-wrap"><table id="salesSummaryReport"></table></div>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="tab">
+      <div class="card">
+        <h2>本地备份</h2>
+        <p class="hint">数据只存在当前 Safari 本地。清理网站数据、卸载/换手机会丢。建议定期导出 JSON 备份。</p>
+        <div class="row">
+          <button type="button" id="exportBtn">导出备份</button>
+          <button type="button" class="secondary" id="importBtn">导入备份</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json" style="display:none" />
+        <div style="margin-top:12px">
+          <button type="button" class="danger" id="clearAllBtn">清空全部数据</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+<script>
+const KEY = 'pubu_ledger_v1';
+let db = loadDB();
+let currentItems = [];
+
+function loadDB() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY));
+    if (d && Array.isArray(d.products)) {
+      return { products: d.products || [], sales: d.sales || [], expenses: d.expenses || [] };
+    }
+  } catch (e) {}
+  return { products: [], sales: [], expenses: [] };
+}
+function persist() { localStorage.setItem(KEY, JSON.stringify(db)); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function money(n) { return (Number(n) || 0).toFixed(2); }
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function today() { return new Date().toISOString().slice(0, 10); }
+function thisMonth() { return new Date().toISOString().slice(0, 7); }
+function getProduct(id) { return db.products.find(p => p.id === id); }
+function getSpec(product, id) { return product && product.specs ? product.specs.find(s => s.id === id) : null; }
+function specCost(product, spec) {
+  if (!product || !spec || !Number(product.totalVolumeL)) return 0;
+  return Number(product.purchasePrice) / Number(product.totalVolumeL) * Number(spec.volumeL);
+}
+
+const $ = id => document.getElementById(id);
+const saleDate = $('saleDate'), saleProduct = $('saleProduct'), saleSpec = $('saleSpec');
+const saleQty = $('saleQty'), saleAmount = $('saleAmount'), itemCostHint = $('itemCostHint');
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'reports') renderReports();
+  });
+});
+
+function renderAll() {
+  renderProducts();
+  renderCurrentItems();
+  renderRecentSales();
+  renderExpenses();
+  renderReports();
+}
+
+function renderProducts() {
+  const oldSaleProduct = saleProduct.value;
+  const oldSpecProduct = $('specProduct').value;
+
+  saleProduct.innerHTML = '<option value="">选择酒款</option>' +
+    db.products.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+
+  $('specProduct').innerHTML = '<option value="">选择酒款</option>' +
+    db.products.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+
+  if (db.products.some(p => p.id === oldSaleProduct)) saleProduct.value = oldSaleProduct;
+  if (db.products.some(p => p.id === oldSpecProduct)) $('specProduct').value = oldSpecProduct;
+
+  renderSaleSpecs();
+
+  if (!db.products.length) {
+    $('productList').innerHTML = '<div class="muted">还没有酒款。先新增酒款，再添加售卖规格。</div>';
+    return;
+  }
+
+  $('productList').innerHTML = db.products.map(p => {
+    const specs = (p.specs || []).map(s => {
+      const cost = specCost(p, s);
+      const gross = Number(s.price) - cost;
+      return `<tr>
+        <td>${esc(s.name)}<div class="muted">${Number(s.volumeL)} L</div></td>
+        <td>¥${money(s.price)}</td>
+        <td>¥${money(cost)}</td>
+        <td class="${gross >= 0 ? 'ok' : 'bad'}">¥${money(gross)}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="list-item">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+        <div>
+          <strong>${esc(p.name)}</strong>
+          <div class="muted">进货价 ¥${money(p.purchasePrice)} / 总容量 ${Number(p.totalVolumeL)} L / 每升成本 ¥${money(Number(p.purchasePrice) / Number(p.totalVolumeL || 1))}</div>
+        </div>
+        <button type="button" class="danger small" data-del-product="${p.id}">删除</button>
+      </div>
+      ${specs ? `<div class="table-wrap"><table><thead><tr><th>规格</th><th>售价</th><th>成本</th><th>毛利</th></tr></thead><tbody>${specs}</tbody></table></div>` : '<div class="muted" style="margin-top:6px">还没有规格</div>'}
+    </div>`;
+  }).join('');
+
+  $('productList').querySelectorAll('[data-del-product]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.delProduct;
+      if (!confirm('删除这个酒款及其规格？历史销售记录不会删除。')) return;
+      db.products = db.products.filter(p => p.id !== id);
+      persist();
+      renderAll();
+    });
+  });
+}
+
+function renderSaleSpecs() {
+  const p = getProduct(saleProduct.value);
+  if (!p) {
+    saleSpec.innerHTML = '<option value="">先选择酒款</option>';
+    itemCostHint.textContent = '';
+    return;
+  }
+  const old = saleSpec.value;
+  saleSpec.innerHTML = '<option value="">选择规格</option>' + (p.specs || []).map(s =>
+    `<option value="${s.id}">${esc(s.name)} / ${Number(s.volumeL)}L / 售价¥${money(s.price)} / 成本¥${money(specCost(p, s))}</option>`
+  ).join('');
+  if ((p.specs || []).some(s => s.id === old)) saleSpec.value = old;
+  updateSaleHint();
+}
+
+function updateSaleHint() {
+  const p = getProduct(saleProduct.value);
+  const s = getSpec(p, saleSpec.value);
+  if (!p || !s) { itemCostHint.textContent = ''; return; }
+  const qty = Number(saleQty.value) || 0;
+  const cost = specCost(p, s);
+  itemCostHint.textContent = `该规格成本 ¥${money(cost)} / 杯；建议实收 ¥${money(Number(s.price) * qty)}`;
+  if (!saleAmount.value || document.activeElement !== saleAmount) {
+    saleAmount.value = money(Number(s.price) * qty);
+  }
+}
+
+saleProduct.addEventListener('change', renderSaleSpecs);
+saleSpec.addEventListener('change', updateSaleHint);
+saleQty.addEventListener('input', updateSaleHint);
+
+$('addItem').addEventListener('click', () => {
+  const p = getProduct(saleProduct.value);
+  const s = getSpec(p, saleSpec.value);
+  const qty = Number(saleQty.value);
+  const amount = Number(saleAmount.value);
+  if (!p || !s) return alert('先选择酒款和规格');
+  if (!(qty > 0)) return alert('数量要大于 0');
+  if (amount < 0) return alert('实收金额不能为负');
+  currentItems.push({ productId: p.id, specId: s.id, qty, amount });
+  renderCurrentItems();
+});
+
+function renderCurrentItems() {
+  const table = $('currentItemsTable');
+  if (!currentItems.length) {
+    table.innerHTML = '<tbody><tr><td class="muted">当前小票还没有明细</td></tr></tbody>';
+    return;
+  }
+  let revenue = 0, cost = 0;
+  const rows = currentItems.map((it, index) => {
+    const p = getProduct(it.productId);
+    const s = getSpec(p, it.specId);
+    const c = specCost(p, s) * it.qty;
+    revenue += it.amount;
+    cost += c;
+    return `<tr>
+      <td>${esc(p ? p.name : '已删除酒款')}<div class="muted">${esc(s ? s.name : '已删除规格')} × ${it.qty}</div></td>
+      <td>¥${money(it.amount)}</td>
+      <td>¥${money(c)}</td>
+      <td><button type="button" class="danger small" data-del-item="${index}">删</button></td>
+    </tr>`;
+  }).join('');
+  table.innerHTML = `<thead><tr><th>明细</th><th>实收</th><th>成本</th><th></th></tr></thead><tbody>${rows}
+    <tr><td><strong>合计</strong></td><td><strong>¥${money(revenue)}</strong></td><td><strong>¥${money(cost)}</strong></td><td></td></tr>
+  </tbody>`;
+  table.querySelectorAll('[data-del-item]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentItems.splice(Number(btn.dataset.delItem), 1);
+      renderCurrentItems();
+    });
+  });
+}
+
+$('clearCurrentItems').addEventListener('click', () => {
+  if (!currentItems.length) return;
+  if (!confirm('清空当前小票明细？')) return;
+  currentItems = [];
+  renderCurrentItems();
+});
+
+$('saveSale').addEventListener('click', () => {
+  if (!saleDate.value) return alert('请选择日期');
+  if (!currentItems.length) return alert('当前小票没有明细');
+  db.sales.push({
+    id: uid(),
+    date: saleDate.value,
+    items: currentItems.map(x => ({ ...x })),
+    createdAt: Date.now()
+  });
+  currentItems = [];
+  persist();
+  renderAll();
+  alert('小票已保存');
+});
+
+function renderRecentSales() {
+  const list = db.sales.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 30);
+  if (!list.length) {
+    $('recentSales').innerHTML = '<div class="muted">还没有销售记录。</div>';
+    return;
+  }
+  $('recentSales').innerHTML = list.map(sale => {
+    let revenue = 0, cost = 0;
+    const lines = (sale.items || []).map(it => {
+      const p = getProduct(it.productId);
+      const s = getSpec(p, it.specId);
+      const c = specCost(p, s) * Number(it.qty);
+      revenue += Number(it.amount) || 0;
+      cost += c;
+      return `${esc(p ? p.name : '已删除酒款')} · ${esc(s ? s.name : '已删除规格')} × ${it.qty} = ¥${money(it.amount)}`;
+    }).join('<br>');
+    return `<div class="list-item">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <strong>${esc(sale.date)}</strong>
+        <button type="button" class="danger small" data-del-sale="${sale.id}">删除</button>
+      </div>
+      <div class="muted" style="margin:6px 0">${lines}</div>
+      <div>实收 ¥${money(revenue)} · 酒水成本 ¥${money(cost)} · 毛利 <span class="${revenue - cost >= 0 ? 'ok' : 'bad'}">¥${money(revenue - cost)}</span></div>
+    </div>`;
+  }).join('');
+
+  $('recentSales').querySelectorAll('[data-del-sale]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!confirm('删除这张小票？')) return;
+      db.sales = db.sales.filter(s => s.id !== btn.dataset.delSale);
+      persist();
+      renderAll();
+    });
+  });
+}
+
+$('productForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('productName').value.trim();
+  const price = Number($('productPrice').value);
+  const volume = Number($('productVolume').value);
+  if (!name || !(price >= 0) || !(volume > 0)) return alert('请填写酒款名称、进货价、总容量');
+  db.products.push({ id: uid(), name, purchasePrice: price, totalVolumeL: volume, specs: [] });
+  persist();
+  e.target.reset();
+  renderAll();
+});
+
+$('specForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const p = getProduct($('specProduct').value);
+  if (!p) return alert('先选择酒款');
+  const name = $('specName').value.trim();
+  const volume = Number($('specVolume').value);
+  const price = Number($('specPrice').value);
+  if (!name || !(volume > 0) || !(price >= 0)) return alert('请填写规格名称、容量、售价');
+  p.specs = p.specs || [];
+  p.specs.push({ id: uid(), name, volumeL: volume, price });
+  persist();
+  $('specName').value = '';
+  $('specVolume').value = '';
+  $('specPrice').value = '';
+  renderAll();
+});
+
+$('expenseForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const date = $('expenseDate').value;
+  const amount = Number($('expenseAmount').value);
+  if (!date || !(amount > 0)) return alert('请填写日期和金额');
+  db.expenses.push({
+    id: uid(),
+    date,
+    category: $('expenseCategory').value,
+    amount,
+    note: $('expenseNote').value.trim()
+  });
+  persist();
+  $('expenseAmount').value = '';
+  $('expenseNote').value = '';
+  renderAll();
+});
+
+function renderExpenses() {
+  const list = db.expenses.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 50);
+  if (!list.length) {
+    $('expenseList').innerHTML = '<div class="muted">还没有支出记录。</div>';
+    return;
+  }
+  $('expenseList').innerHTML = list.map(x => `<div class="list-item">
+    <div style="display:flex;justify-content:space-between;gap:8px">
+      <strong>${esc(x.date)} · ${esc(x.category)}</strong>
+      <button type="button" class="danger small" data-del-expense="${x.id}">删除</button>
+    </div>
+    <div>¥${money(x.amount)} ${x.note ? '<span class="muted">· ' + esc(x.note) + '</span>' : ''}</div>
+  </div>`).join('');
+
+  $('expenseList').querySelectorAll('[data-del-expense]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!confirm('删除这笔支出？')) return;
+      db.expenses = db.expenses.filter(x => x.id !== btn.dataset.delExpense);
+      persist();
+      renderAll();
+    });
+  });
+}
+
+function renderReports() {
+  const month = $('reportMonth').value || thisMonth();
+  const sales = db.sales.filter(s => (s.date || '').startsWith(month));
+  const expenses = db.expenses.filter(x => (x.date || '').startsWith(month));
+
+  let revenue = 0, cogs = 0;
+  const daily = {};
+  const productMap = {};
+  const costMap = {};
+  const summaryMap = {};
+
+  function ensureDaily(date) {
+    if (!daily[date]) daily[date] = { revenue: 0, cogs: 0, expense: 0 };
+    return daily[date];
+  }
+
+  sales.forEach(sale => {
+    const d = ensureDaily(sale.date);
+    (sale.items || []).forEach(it => {
+      const p = getProduct(it.productId);
+      const s = getSpec(p, it.specId);
+      const unitCost = specCost(p, s);
+      const cost = unitCost * Number(it.qty);
+      const amount = Number(it.amount) || 0;
+      revenue += amount;
+      cogs += cost;
+      d.revenue += amount;
+      d.cogs += cost;
+
+      const pName = p ? p.name : '已删除酒款';
+      const sName = s ? s.name : '已删除规格';
+
+      if (!productMap[pName]) productMap[pName] = { qty: 0, revenue: 0, cost: 0 };
+      productMap[pName].qty += Number(it.qty);
+      productMap[pName].revenue += amount;
+      productMap[pName].cost += cost;
+
+      const costKey = '酒水成本 · ' + pName;
+      costMap[costKey] = (costMap[costKey] || 0) + cost;
+
+      const summaryKey = pName + ' · ' + sName;
+      if (!summaryMap[summaryKey]) summaryMap[summaryKey] = { qty: 0, revenue: 0, cost: 0 };
+      summaryMap[summaryKey].qty += Number(it.qty);
+      summaryMap[summaryKey].revenue += amount;
+      summaryMap[summaryKey].cost += cost;
+    });
+  });
+
+  let expenseTotal = 0;
+  expenses.forEach(x => {
+    const d = ensureDaily(x.date);
+    d.expense += Number(x.amount) || 0;
+    expenseTotal += Number(x.amount) || 0;
+    const key = x.category || '其他';
+    costMap[key] = (costMap[key] || 0) + (Number(x.amount) || 0);
+  });
+
+  const profit = revenue - cogs - expenseTotal;
+  $('statRevenue').textContent = '¥' + money(revenue);
+  $('statCogs').textContent = '¥' + money(cogs);
+  $('statExpense').textContent = '¥' + money(expenseTotal);
+  $('statProfit').textContent = '¥' + money(profit);
+  $('statProfit').className = 'v ' + (profit >= 0 ? 'ok' : 'bad');
+
+  const dates = Object.keys(daily).sort();
+  $('dailyReport').innerHTML = '<thead><tr><th>日期</th><th>收入</th><th>酒水成本</th><th>支出</th><th>利润</th></tr></thead><tbody>' +
+    (dates.length ? dates.map(date => {
+      const d = daily[date];
+      const p = d.revenue - d.cogs - d.expense;
+      return `<tr><td>${esc(date)}</td><td>¥${money(d.revenue)}</td><td>¥${money(d.cogs)}</td><td>¥${money(d.expense)}</td><td class="${p >= 0 ? 'ok' : 'bad'}">¥${money(p)}</td></tr>`;
+    }).join('') : '<tr><td class="muted" colspan="5">本月暂无数据</td></tr>') + '</tbody>';
+
+  const productRows = Object.entries(productMap);
+  $('productReport').innerHTML = '<thead><tr><th>酒款</th><th>杯数</th><th>实收</th><th>成本</th><th>毛利</th></tr></thead><tbody>' +
+    (productRows.length ? productRows.map(([name, v]) => {
+      const g = v.revenue - v.cost;
+      return `<tr><td>${esc(name)}</td><td>${v.qty}</td><td>¥${money(v.revenue)}</td><td>¥${money(v.cost)}</td><td class="${g >= 0 ? 'ok' : 'bad'}">¥${money(g)}</td></tr>`;
+    }).join('') : '<tr><td class="muted" colspan="5">本月暂无数据</td></tr>') + '</tbody>';
+
+  const totalCost = Object.values(costMap).reduce((a, b) => a + b, 0);
+  const costRows = Object.entries(costMap).sort((a, b) => b[1] - a[1]);
+  $('costReport').innerHTML = '<thead><tr><th>成本项</th><th>金额</th><th>占比</th></tr></thead><tbody>' +
+    (costRows.length ? costRows.map(([name, amount]) => `<tr><td>${esc(name)}</td><td>¥${money(amount)}</td><td>${totalCost ? money(amount / totalCost * 100) : '0.00'}%</td></tr>`).join('') : '<tr><td class="muted" colspan="3">本月暂无数据</td></tr>') + '</tbody>';
+
+  const summaryRows = Object.entries(summaryMap);
+  $('salesSummaryReport').innerHTML = '<thead><tr><th>酒款 · 规格</th><th>数量</th><th>实收</th><th>成本</th><th>毛利</th></tr></thead><tbody>' +
+    (summaryRows.length ? summaryRows.map(([name, v]) => {
+      const g = v.revenue - v.cost;
+      return `<tr><td>${esc(name)}</td><td>${v.qty}</td><td>¥${money(v.revenue)}</td><td>¥${money(v.cost)}</td><td class="${g >= 0 ? 'ok' : 'bad'}">¥${money(g)}</td></tr>`;
+    }).join('') : '<tr><td class="muted" colspan="5">本月暂无数据</td></tr>') + '</tbody>';
+}
+
+$('reportMonth').addEventListener('change', renderReports);
+
+$('ocrBtn').addEventListener('click', async () => {
+  const file = $('ocrFile').files[0];
+  if (!file) return alert('先选择小票图片');
+  if (!window.Tesseract) return alert('OCR 库还没加载好，检查网络后重试');
+  $('ocrStatus').textContent = '识别中，首次会下载中文语言包，可能需要 1-2 分钟…';
+  try {
+    const result = await Tesseract.recognize(file, 'chi_sim+eng', {
+      logger: m => {
+        if (m.status) $('ocrStatus').textContent = m.status + (m.progress ? ' ' + Math.round(m.progress * 100) + '%' : '');
+      }
+    });
+    $('ocrText').value = result.data.text || '';
+    $('ocrStatus').textContent = '识别完成。请核对文字后手动录入明细。';
+  } catch (err) {
+    console.error(err);
+    $('ocrStatus').textContent = '识别失败：' + err.message;
+  }
+});
+
+$('clearOcrBtn').addEventListener('click', () => {
+  $('ocrText').value = '';
+  $('ocrStatus').textContent = '';
+});
+
+$('exportBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `youbulao-ledger-${today()}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data || !Array.isArray(data.products)) throw new Error('文件格式不对');
+    if (!confirm('导入会覆盖当前全部数据，确定？')) return;
+    db = { products: data.products || [], sales: data.sales || [], expenses: data.expenses || [] };
+    persist();
+    renderAll();
+    alert('导入完成');
+  } catch (err) {
+    alert('导入失败：' + err.message);
+  } finally {
+    e.target.value = '';
+  }
+});
+
+$('clearAllBtn').addEventListener('click', () => {
+  if (!confirm('确定清空全部数据？建议先导出备份。')) return;
+  if (!confirm('再确认一次：清空后无法恢复。')) return;
+  db = { products: [], sales: [], expenses: [] };
+  currentItems = [];
+  localStorage.removeItem(KEY);
+  renderAll();
+});
+
+saleDate.value = today();
+$('expenseDate').value = today();
+$('reportMonth').value = thisMonth();
+renderAll();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

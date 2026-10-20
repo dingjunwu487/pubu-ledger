@@ -1,0 +1,10 @@
+{
+  "name": "优布劳酒馆账本",
+  "short_name": "酒馆账本",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#111827",
+  "lang": "zh-CN"
+}
